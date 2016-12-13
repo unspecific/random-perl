@@ -15,3 +15,19 @@ to keep score on some of the mailing lists I have been on for a while. What it d
 
 ## hosts
 a 'host' replacement (sort of) that expands subnets into a list of IPs can be used with or without hostnames.  Can also be used as a perl include file to use the expanding capabilities (as seen in the scanners) - Can also be used as a CGI script, called through a web server and returns HTML
+
+## Marconi
+ A simple perl module used with a few of the other scripts.  It has functions such as expanding network notation (CIDR notation, CISCO notation, ranges, etc...) plus NBT UDP packet creation and reading and more...
+
+## Kaiko
+Kaiko is a silc bot
+
+## nbtscan
+This is a simple script that uses Marconi to scan a range of hosts for their NetBIOS name and MAC address. UDP port 137 must be open for it to work. It uses UDP sockets, not a plugin or module to request and receive the info.
+
+## route-dector
+This scanner is intended to detect multi-homed boxes on a secured network. Also uses marconi for network notation expansion.
+
+
+
+
