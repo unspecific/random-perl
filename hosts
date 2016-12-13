@@ -1,0 +1,466 @@
+#!/usr/bin/perl
+#---------------------------------------
+#
+# hosts : expantion and lookups
+#   Writen by MadHat (madhat@unspecific.com)
+#
+#  http://www.unspecific.com/scanner/hosts/
+#
+# a 'host' replacement (sort of) that expands subnets into a list of IPs
+# can be used with or without hostnames.  Can also be used as a perl
+# include file to use the expanding capabilities (as seen in the scanners)
+#
+# Copyright (c) 2001-2002, MadHat (madhat@unspecific.com)
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in
+#     the documentation and/or other materials provided with the distribution.
+#   * Neither the name of MadHat Productions nor the names of its
+#     contributors may be used to endorse or promote products derived
+#     from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+# FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+# TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+# LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+# NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+#---------------------------------------
+
+use Socket qw(:DEFAULT :crlf);
+use Getopt::Std;
+
+my $VERSION = '1.3.1';
+
+getopts("d:vh");
+
+my $cli_exec = $0;
+
+if (defined $ENV{'REQUEST_METHOD'}) {
+  $HTML = 1;
+  use CGI ":standard";
+  use CGI::Carp "fatalsToBrowser";
+  print header, start_html('Unspecific.com "hosts"'), "<pre>";
+  if (param('net')  and param('net') !~ /\.\./ ) {
+    @ARGV = param('net');
+    if (param('v')) {
+      $opt_v = 1;
+    }
+  } else {
+    $opt_h = 1;
+  }
+}
+if (!$ARGV[0] or $opt_h) {
+  print "hosts v$VERSION by MadHat (madhat\@unspecific.com)\n";
+  if (!$HTML) {
+    print "  $0 [-v] <ip/subnetmask_combo>\n" if (!$HTML);
+  } else {
+    print "<form method=GET><input name=net><input type=checkbox name=v>Verbose <input type=submit value=List></form>\n";
+  }
+  print "    returns list of IPs\n";
+  print "    supported formats are:
+ \t a.b.c.d/n       - 10.0.0.1/25
+ \t a.b.c.*         - 10.0.0.*
+ \t a.b.c.d/w.x.y.z - 10.0.0.0/255.255.224.0 (standard format)
+ \t a.b.c.d/w.x.y.z - 10.0.0.0/0.0.16.255    (cisco format)
+ \t a.b.c.d-z       - 10.1.2.0-12
+ \t a.b.c-x.*       - 10.0.0-3.*
+ \t a.b.c-x.d       - 10.0.0-3.0
+ \t a.b.c.d-a.b.y.z - 10.0.0.10-10.0.1.5 (smaller than a class B)
+ \t hostname        - unspecific.com\n";
+  print "    can also use a comma or space seperated list\n";
+  print "    can also point to a file with host list (lines starting with # are ignored)\n";
+  print "    if a single IP is used, hostname will be displayed by default\n";
+  print "    -v will also add in host names when using subnets\n\n";
+  exit;
+} else {
+  if ($HTML and !$opt_v) {
+    print "<a href=$ENV{'REQUEST_URI'}&v=1>Show DNS</a> *May Be Slow*<br>\n";
+  }
+  for (@ARGV) {
+    if ( -e $_ ) {
+      open (IN, $_);
+      push (@nets, <IN>);
+      close (IN);
+    } else {
+      push (@nets, split(',', $_));
+    }
+  }
+  foreach $net (@nets){
+    chomp $net;
+    next if ($net =~ /^#/ or $net =~ /^$/);
+    foreach $ip (calculate_ip_range($net)) {
+      print "$ip\n";
+    }
+  }
+
+}
+
+# generate an array of IPs based on multiple input types
+#---------------------------------------
+sub calculate_ip_range {
+  # 1st IP scalar
+  #  formats allowed include
+  #    a.b.c.d/n       - 10.0.0.1/25
+  #    a.b.c.*         - 10.0.0.*
+  #    a.b.c.d/w.x.y.z - 10.0.0.0/255.255.224.0 (standard format)
+  #    a.b.c.d/w.x.y.z - 10.0.0.0/0.0.16.255    (cisco format)
+  #    a.b.c.d-z       - 10.1.2.0-12
+  #    a.b.c-x.*       - 10.0.0-3.*
+  #    a.b.c-x.d       - 10.0.0-3.0
+  #    a.b.c.d-a.b.y.z - 10.0.0.10-10.0.1.5 (smaller than a class B)
+  #    hostname        - unspecific.com
+  # 2nd wether or not to return an error message or nothing 
+  #    default is to return nothing on error
+  # 3rd is max number IPs to return 
+  #    default max is 65536 and can not be raised at this time
+  my ($ip, $return_error, $max_ip) = @_;
+  my @msg = ();
+  my $err = '';
+  $max_ip = $max_ip || 65536;
+  my $a, $b, $c, $d, $sub_a, $sub_b, $sub_c, $sub_d, $num_ip, $nm,
+     $d_s, $d_f, $c_s, $c_f, @msg, $err, $num_sub, $start_sub, $count_sub = 0;
+  # lets start now...
+  # does it look just like a single IP address?
+  if ($ip =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/) {
+    print STDERR "$cli_exec ($$): x.x.x.x format $ip\n" if ($opt_d);
+    $a = $1; $b = $2; $c = $3; $d = $4;
+    if ( $a > 255 or $a < 0 or $b > 255 or $b < 0 or $c > 255 or $c < 0 or 
+         $d > 255 or $d < 0) {
+      $err = "ERROR: Appears to be a bad IP address ($ip)";
+    } else {
+      push @msg, add_ip($ip);
+    }
+  # does it look like the format x.x.x.x/n
+  } elsif ($ip =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/) {
+    print STDERR "$cli_exec ($$): x.x.x.x/n format $ip\n" if ($opt_d);
+    $a = $1; $b = $2; $c = $3; $d = $4; $nm = $5;
+    if ( $a > 255 or $a < 0 or $b > 255 or $b < 0 or $c > 255 or $c < 0 or 
+         $d > 255 or $d < 0 or $nm > 32 or $nm < 0) {
+      $err = "ERROR: Something appears to be wrong ($ip)";
+    } else {
+      $num_ip = 2**(32-$nm);
+      if ($num_ip > $max_ip) {
+        $err = "ERROR: Too many IPs returned ($num_ip)";
+      } elsif ($num_ip <= 256) {
+        $num_sub = 256/$num_ip;
+        SUBNET: for $count_sub (0..($num_sub - 1)) {
+          $start_sub = $count_sub * $num_ip;
+          if ($d > $start_sub and $d < ($start_sub + $num_ip)) {
+            $d = $start_sub;
+            last SUBNET;
+          }
+        }
+        for $d ($d..($d + $num_ip - 1)) {
+          push @msg, add_ip("$a.$b.$c.$d");
+        }
+      } elsif ($num_ip <= 65536) {
+        $num_sub = 256/($num_ip/256); $num_ip = $num_ip/256;
+        SUBNET: for $count_sub (0..($num_sub - 1)) {
+          $start_sub = $count_sub * $num_ip;
+          if ($c > $start_sub and $c < ($start_sub + $num_ip)) {
+            $c = $start_sub;
+            last SUBNET;
+          }
+        }
+        for $c ($c..($c + $num_ip - 1)) {
+          for $d (0..255) {
+            push @msg, add_ip("$a.$b.$c.$d");
+          }
+        }
+      }
+    }
+  # does it look like the format x.x.x.x-y
+  } elsif ($ip =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\-(\d{1,3})$/) {
+    print STDERR "$cli_exec ($$): x.x.x.x-y format $ip\n" if ($opt_d);
+    $a = $1; $b = $2; $c = $3; $d_s = $4; $d_f = $5;
+    if ( $d_f > 255 or $d_s > 255 or $d_s < 0 or $d_f < 0 or $a < 0 or 
+         $a > 255 or $b < 0 or $b > 255 or $c < 0 or $c > 255 ) {
+      $err = "ERROR: Something appears to be wrong ($ip).";
+    } elsif ($d_f < $d_s) {
+      LOOP: for $d ($d_f .. $d_s) {
+        if ($#msg > $max_ip) { 
+          $err = "ERROR: Too many IPs returned ($#msg+)"; 
+          last LOOP;
+        }
+        push @msg, add_ip("$a.$b.$c.$d");
+      }
+      # $err = "Sorry, we don't count backwards.";
+    } elsif ($d_f == $d_s) {
+      push @msg, add_ip("$a.$b.$c.$d");
+    } else {
+      LOOP: for $d ($d_s .. $d_f) {
+        if ($#msg > $max_ip) { 
+          $err = "ERROR: Too many IPs returned ($#msg+)"; 
+          last LOOP;
+        }
+        push @msg, add_ip("$a.$b.$c.$d");
+      }
+    }
+      # does it look like the format x.x.x-y.*
+  } elsif ($ip =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\-(\d{1,3})\.(.*)$/) {
+    print STDERR "$cli_exec ($$): x.x.x-y.* format $ip\n" if ($opt_d);
+    $a = $1; $b = $2; $c_s = $3; $c_f = $4; $d = $5;
+    if ( $c_f > 255 or $c_s > 255 or $c_s < 0 or $c_f < 0 or 
+         $a < 0 or $a > 255 or $b < 0 or $b > 255 or 
+         ( ($d < 0 or $d > 255) and $d ne "*") ) {
+      $err = "ERROR: Something appears to be wrong ($ip)";
+    } elsif ($c_f < $c_s) {
+      LOOP: for $c ($c_f .. $c_s) {
+        for $d (0..255) {
+          if ($#msg > $max_ip) { 
+            $err = "ERROR: Too many IPs returned ($#msg+)"; 
+            last LOOP;
+          }
+          push @msg, add_ip("$a.$b.$c.$d");
+        }
+      }
+    } elsif ($c_f == $c_s) {
+      push @msg, add_ip("$a.$b.$c.$d");
+    } else {
+      LOOP: for $c ($c_s .. $c_f) {
+        for $d (0..255) {
+          if ($#msg > $max_ip) { 
+            $err = "ERROR: Too many IPs returned ($#msg+)"; 
+            last LOOP;
+          }
+          push @msg, add_ip("$a.$b.$c.$d");
+        }
+      }
+    }
+  # does it look like the format x.x.x.*
+  } elsif ($ip =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\*$/) {
+    print STDERR "$cli_exec ($$): x.x.x.* format $ip\n" if ($opt_d);
+    $a = $1; $b = $2; $c = $3;
+    if ( $a < 0 or $a > 255 or $b < 0 or $b > 255 or $c < 0 or $c > 255 ) {
+      $err = "ERROR: Something appears to be wrong ($ip)";
+    } else {
+      LOOP: for $d (0 .. 255) {
+        if ($#msg > $max_ip) { 
+          $err = "ERROR: Too many IPs returned ($#msg+)"; 
+          last LOOP;
+        }
+        push @msg, add_ip("$a.$b.$c.$d");
+      }
+    }
+  # does it look like the format x.x.x.x/y.y.y.y
+  } elsif ($ip =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/) {
+    print STDERR "$cli_exec ($$): x.x.x.x/y.y.y.y format $ip\n" if ($opt_d);
+    $a = $1; $b = $2; $c = $3; $d = $4; 
+    $sub_a = $5; $sub_b = $6; $sub_c = $7; $sub_d = $8;
+    # if it appears to be in "cisco" format, convert it
+    if ($sub_a == 0 and $sub_b == 0) {
+      $sub_a = 255 - $sub_a; $sub_b = 255 - $sub_b;
+      $sub_c = 255 - $sub_c; $sub_d = 255 - $sub_d;
+    }
+    # check to see if the input looks valid
+    if ( $a > 255 or $a < 0 or $b > 255 or $b < 0 or $c > 255 or $c < 0 or 
+         $d > 255 or $d < 0 or $sub_a > 255 or $sub_a < 0 or
+         $sub_b > 255 or $sub_b < 0 or $sub_c > 255 or $sub_c < 0 or 
+         $sub_d > 255 or $sub_d < 0 or ($sub_d < 255 and $sub_c != 255 and 
+         $sub_b != 255 and $sub_a != 255) or ($sub_d != 0 and 
+         $sub_c == 0 and $sub_b < 255 and $sub_a == 255) or 
+         ($sub_d != 0 and $sub_c < 255 and $sub_b == 255 and 
+         $sub_a == 255)) {
+      $err = "ERROR: Something appears to be wrong ($ip)";
+    # if it looked valid, but it appears to be an IP, return that IP
+    } elsif ($sub_d == 255) {
+      push @msg, add_ip("$a.$b.$c.$d");
+    # if the range appears to be part of a class C
+    } elsif ($sub_d < 255 and $sub_d >= 0 and $sub_c == 255) {
+      $num_ip = 256 - $sub_d; $num_sub = 256/$num_ip;
+      if ($num_ip > $max_ip) {
+        $err = "ERROR: Too many IPs returned ($num_ip)";
+      } else {
+        SUBNET: for $count_sub (0..($num_sub - 1)) {
+          $start_sub = $count_sub * $num_ip;
+          if ($d > $start_sub and $d < ($start_sub + $num_ip)) {
+            $d = $start_sub;
+            last SUBNET;
+          }
+        }
+        LOOP: for $d ($d..($d + $num_ip - 1)) {
+          if ($#msg > $max_ip) { 
+            $err = "ERROR: Too many IPs returned ($#msg+)"; 
+            last LOOP;
+          }
+          push @msg, add_ip("$a.$b.$c.$d");
+        }
+      }
+      # if the range appears to be part of a class B
+    } elsif ($sub_c < 255 and $sub_c >= 0) {
+      $num_ip = 256 - $sub_c; $num_sub = 256/$num_ip;
+      if ($num_ip > $max_ip) {
+        $err = "ERROR: Too many IPs returned ($num_ip)";
+      } else {
+        SUBNET: for $count_sub (0..($num_sub - 1)) {
+          $start_sub = $count_sub * $num_ip;
+          if ($c > $start_sub and $c < ($start_sub + $num_ip)) {
+            $c = $start_sub;
+            last SUBNET;
+          }
+        }
+        LOOP: for $c ($c..($c + $num_ip - 1)) {
+          for $d (0..255) {
+            if ($#msg > $max_ip) { 
+              $err = "ERROR: Too many IPs returned ($#msg+)"; 
+              last LOOP;
+            }
+            push @msg, add_ip("$a.$b.$c.$d");
+          }
+        }
+      }
+    }
+  # does it look like the format x.x.x.x - y.y.y.y
+  } elsif ($ip =~ /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3}) ?- ?(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/) {
+    print STDERR "$cli_exec ($$): x.x.x.x - y.y.y.y format $ip\n" if ($opt_d);
+    $s_a = $1; $s_b = $2; $s_c = $3; $s_d = $4; 
+    $e_a = $5; $e_b = $6; $e_c = $7; $e_d = $8;
+    # check to see if the input looks valid
+    if ( $s_a > 255 or $s_a < 0 or $s_b > 255 or $s_b < 0 or
+         $s_c > 255 or $s_c < 0 or $s_d > 255 or $s_d < 0 or
+         $e_a > 255 or $e_a < 0 or $e_b > 255 or $e_b < 0 or
+         $e_c > 255 or $e_c < 0 or $e_d > 255 or $e_d < 0 or
+         $s_a < $e_a or ($s_a == $e_a and $s_b > $e_b) or
+          ($s_a == $e_a and $s_b == $e_b and $s_c > $e_c) or
+          ($s_a == $e_a and $s_b == $e_b and $s_c == $e_c and $s_d > $e_d)
+       ) {
+      $err = "ERROR: Something appears to be wrong ($ip)";
+      print STDERR "$cli_exec ($$): Is Broken? $ip\n" if ($opt_d);
+    # if it looked valid, but it appears to be an IP, return that IP
+    } elsif ($s_a == $e_a and $s_b == $e_b and $s_c == $e_c and $s_d == $e_d) {
+      push @msg, add_ip("$s_a.$s_b.$s_c.$s_d");
+    # if the range appears to be part of a class C
+    } else {
+      print STDERR "$cli_exec ($$): Else? $ip\n" if ($opt_d);
+      # if we are dealing with class A's (yes this will be a problem)
+      if ($s_a == $e_a) {
+        my $a = $s_a;
+        if ($s_b == $e_b) {
+          my $b = $s_b;
+          if ($s_c == $e_c) {
+            my $c = $s_c;
+            print STDERR "$cli_exec ($$): Smaller than a Class C $ip\n" if ($opt_d);
+              for my $d ($s_d..$e_d) {
+                push @msg, add_ip("$a.$b.$c.$d");
+              }            
+          } else {
+            print STDERR "$cli_exec ($$): Spans more than 1 class C $ip\n" if ($opt_d);
+            LOOP: for my $c ($s_c..$e_c) {
+              if ($c == $s_c) {
+                 for my $d ($s_d..255) {
+                  if ($#msg > $max_ip) { 
+                    $err = "ERROR: Too many IPs returned ($#msg+)"; 
+                    last LOOP;
+                  }
+                  push @msg, add_ip("$a.$b.$c.$d");
+                }
+              } elsif ($c == $e_c) {
+                 for my $d (0..$e_d) {
+                  if ($#msg > $max_ip) { 
+                    $err = "ERROR: Too many IPs returned ($#msg+)"; 
+                    last LOOP;
+                  }
+                  push @msg, add_ip("$a.$b.$c.$d");
+                }
+              } else {
+                for my $d (0..255) {
+                  if ($#msg > $max_ip) { 
+                    $err = "ERROR: Too many IPs returned ($#msg+)"; 
+                    last LOOP;
+                  }
+                  push @msg, add_ip("$a.$b.$c.$d");
+                }  
+              }
+            }
+          }
+          
+        } else {
+          print STDERR "$cli_exec ($$): Spans more than 1 class B $ip\n" if ($opt_d);
+          $err = "ERROR: Out of Range, please use a smaller range"; 
+        }
+      } else {
+        print STDERR "$cli_exec ($$): Spans more than 1 class A $ip\n" if ($opt_d);
+        $err = "ERROR: Out of Range, please use a smaller range";         
+      }
+      
+    }
+
+
+
+  # if it looks like a hostname
+  } elsif ($ip =~ /[\w\.]+/)  {
+    print STDERR "$cli_exec ($$): DNS name $ip\n" if ($opt_d);
+    if ($ip =~ /^(\w+)\[(\d{1,})\-(\d{1,})\]([\w\.]+)$/) {
+      print "$1, $2, $3, $4\n" if ($opt_d);
+      if ($3 <= $2) {
+        return 0;
+      } else {
+        for $current ($2..$3) {
+          my $ip = "$1$current$4";
+          my ($name,$aliases,$type,$len,@thisaddr) = gethostbyname($ip);
+          my ($a,$b,$c,$d) = unpack('C4',$thisaddr[0]);
+          if ($a and $b and $c and $d) {
+            if (calculate_ip_range("$a.$b.$c.$d")) {
+              print STDERR "$cli_exec ($$): $ip points to $a.$b.$c.$d\n" 
+                if ($opt_d);
+              push @msg, add_ip("$a.$b.$c.$d");
+            }
+          } else {
+            $err = "ERROR: Something appears to be wrong ($ip)";
+          }
+        }
+      }
+    } else {
+      my ($name,$aliases,$type,$len,@thisaddr) = gethostbyname($ip);
+      my ($a,$b,$c,$d) = unpack('C4',$thisaddr[0]);
+      if ($a and $b and $c and $d) {
+        if (calculate_ip_range("$a.$b.$c.$d")) {
+          print STDERR "$cli_exec ($$): $ip points to $a.$b.$c.$d\n" 
+            if ($opt_d);
+          push @msg, add_ip("$a.$b.$c.$d");
+        }
+      } else {
+        $err = "ERROR: Something appears to be wrong ($ip)";
+      }
+    }
+  # if it doesn't match one of those...
+  } else {
+    print STDERR "$cli_exec ($$): Not Recognised $ip\n" if ($opt_d);
+    $err = "ERROR: Something appears to be wrong ($ip)";
+  }
+  if ( $err or $return_error ) { 
+    return "$err\n"; 
+  } elsif (@msg) {
+    return @msg;
+  } else {
+    print "$0 ($$) : Nothing to return\n" if ($opt_d);
+    return;
+  }
+}
+
+
+sub add_ip {
+  my ($ip) = @_;
+  print "$0 ($$) : adding $ip\n" if ($opt_d);
+  if ( ($ip eq $net and $#nets == 0) or $opt_v) {
+    $dnsaddr = inet_aton($ip);
+    $dnsname = gethostbyaddr($dnsaddr, AF_INET);
+    $dnsname = $dnsname?$dnsname:'Not in DNS';
+    $ip = sprintf("%-16s  %-60s", $ip, $dnsname);
+  }
+  return($ip);
+}
