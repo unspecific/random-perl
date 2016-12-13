@@ -1,15 +1,3 @@
-# [11:45] <I)ruid> madhat, a couple of comments on your bot
-# [11:47] <I)ruid> first, silc handles channel names as case-insensitive,
-# whereas in your bot they are case sensitive.  Took me forever to
-        # figure out why I wasn't getting auto-opped when I had #cau in
-# the conf and the bot was joined to #CAU (:
-# [11:47] <I)ruid> second, if you update the bot code any time soon, you
-# may want to think about adding boolean switches for each chunk of
-        # behavior so you can turn them off from the conf file instead of
-# commenting them all out in the code itself like I ended up doing (:
-# [11:48] <I)ruid> I think there was a third but I don't recall what it
-# was now...
-
 use strict;
 use vars qw(%IRSSI %conf $LOG $LOGFILE $DEBUG $md5 $c_md5 %last
            $self $VERSION $md5_cmd %memory);
@@ -28,7 +16,7 @@ my $dict_port   = 2628;
   contact       => 'madhat@unspecific.com',
   name          => 'Kaiko',
   descriotion   => 'The entertaining SILC bot.',
-  version       => '.26',
+  version       => '.25',
   license       => 'GPL',
 );
 
@@ -38,11 +26,7 @@ $md5_cmd = '/usr/bin/md5sum';
 # FreeBSD
 # $md5_cmd = '/sbin/md5 -q';
 
-my $home = "$ENV{HOME}/.silc-kaiko";
-my $conf = "$home/kaiko.conf";
-my $kaiko = "$home/scripts/kaiko.pl";
-
-load_conf($conf);
+load_conf("$ENV{HOME}/.silc/kaiko.conf");
 load_memory();
 $| = 42;
 if ($conf{config}{log} and $conf{config}{logfile}[0]) {
@@ -59,8 +43,8 @@ if ($LOG) {
   print LOG "[$now] Kaiko Initialized\n";
 }
 
-$md5 = `$md5_cmd $kaiko`;
-$c_md5 = `$md5_cmd $conf`;
+$md5 = `$md5_cmd $ENV{HOME}/.silc/scripts/kaiko.pl`;
+$c_md5 = `$md5_cmd $ENV{HOME}/.silc/kaiko.conf`;
 chomp $md5;
 chomp $c_md5;
 add_log("MD5 => $md5") if ($DEBUG);
@@ -90,8 +74,8 @@ sub load_conf {
         my $file = $2;
         if (-e $file) {
           $file = $file;
-        } elsif (-e "$home/$file") {
-          $file = "$home/$file";
+        } elsif (-e "$ENV{HOME}/.silc/$file") {
+          $file = "$ENV{HOME}/.silc/$file";
         } else {
           $file = '';
         }
@@ -144,10 +128,6 @@ sub public_message {
   if ($msg =~ /^$self sleep (\d+)$/) {
     if (!$memory{'sleep_till'}) {
       my $sleep = $1;
-      if (!$conf{"ops:$channel"}{$nick}[0] or $conf{"ops:$channel"}{$nick}[0] ne $memory{$nick}{fingerprint}) {
-        $server->command("action -channel $channel decides $nick can't tell her what to do");
-        return 0;
-      }
       if ($sleep > 0 and $sleep < 30) {
         $memory{'sleep_till'} = time + ($sleep * 60);
         for my $ch (sort keys %{$memory{channels}}) {
@@ -185,7 +165,7 @@ sub public_message {
   $address =~ /\@(.+)$/;
   $memory{$nick}{'from'} = $1;
   if ($msg =~ /^$self version$/) {
-    $server->command("action -channel $channel is version $IRSSI{version} with conf version $VERSION");
+    $server->command("action -channel $channel is Version $VERSION");
     return 0;
   }
   if ($msg =~ /^$self broadcast (.*)$/) {
@@ -206,10 +186,7 @@ sub public_message {
     my $word = $1;
     my $def = define($word, 'wn');
     if ($def) {
-      $server->command("msg -channel $channel according to WordNet: ");
-      for my $line (split(/\n/,$def)) {
-        $server->command("msg -channel $channel $line");
-      }
+      $server->command("action -channel $channel has been told '$word' means\n $def");
     } else {
       $server->command("action -channel $channel doesn't know what '$word' means");
     }
@@ -219,10 +196,7 @@ sub public_message {
     my $word = $1;
     my $def = define($word, 'jargon');
     if ($def) {
-      $server->command("msg -channel $channel according to someone else: ");
-      for my $line (split(/\n/,$def)) {
-        $server->command("msg -channel $channel $line");
-      }
+      $server->command("action -channel $channel has been told '$word' means\n $def");
     } else {
       $server->command("action -channel $channel doesn't know what '$word' means");
     }
@@ -238,7 +212,7 @@ sub public_message {
   for my $match (keys %{$conf{responses}}) {
     my $key = $match;
     $match =~ s/\$self/$self/g;
-    if ($msg =~ /\b$match\b/i) {
+    if ($msg =~ /$match/i) {
       my $quote = $conf{responses}{$key}[int(rand(@{$conf{responses}{$key}}))];
       $nick =~ s/^([^\@]+)\@?.*$/$1/;
       $quote =~ s/\$nick/$nick/g;
@@ -250,7 +224,6 @@ sub public_message {
     my $a = $1;
     my $c = $2;
     my $b = $3;
-    $a =~ s/^\s*//g;
     if ($a =~ /^(who|what)\s*$/i and $memory{$c}{$b}) {
       $server->command("action -channel $channel heard $b $c $memory{$c}{$b}");
     } else {
@@ -319,8 +292,6 @@ sub check_output {
 sub private_message {
   my ($server, $message, $nick, $address) = @_;
   if ($message eq 'dump conf') {
-    $server->command("msg $nick sorry I don't do that anymore");
-    return 0;
     for my $key (sort keys %conf) {
       $server->command("msg $nick $key");
       for my $nkey (sort keys %{$conf{$key}}) {
@@ -340,8 +311,6 @@ sub private_message {
     return 0;
   }
   if ($message =~ /^dump memory ?(.*)$/) {
-    $server->command("msg $nick sorry I don't do that anymore");
-    return 0;
     if (my $item = $1) {
       return if (!$memory{$item});
       $server->command("msg $nick dumping memory $item");
@@ -385,65 +354,65 @@ sub private_message {
     return 0;
   }
   if ($message eq 'help') {
-    $server->command("msg $nick Private Message Commands:");
-$server->command("msg $nick - join #channel [passwd]");
-  $server->command("msg $nick To invite $self to #channel");
-  $server->command("msg $nick She will join and add the person who invited her to her auto op");
-    $server->command("msg $nick list to that channel.");
-  $server->command("msg $nick You can invite her to a channel, op her and leave, and when you come back,");
-    $server->command("msg $nick she will auto-op you, keeping the channel open");
+    $server->command("msg $nick Private Message Commands:
+- join #channel [passwd]
+  To invite $self to #channel
+  She will join and add the person who invited her to her auto op 
+    list to that channel.
+  You can invite her to a channel, op her and leave, and when you come back, 
+    she will auto-op you, keeping the channel open
 
-$server->command("msg $nick - leave #channel");
-  $server->command("msg $nick To make $self leave a channel");
-  $server->command("msg $nick Can only be done by the person that did the invite (by fingerprint)");
+- leave #channel
+  To make $self leave a channel
+  Can only be done by the person that did the invite (by fingerprint)
 
-$server->command("msg $nick -op #channel user");
-  $server->command("msg $nick To make $self op user on #channel, if they have the rights or you ");
-    $server->command("msg $nick have op rights for that channel in the config");
-    $server->command("msg $nick anonymous ops?");
+-op #channel user
+  To make $self op user on #channel, if they have the rights or you 
+    have op rights for that channel in the config
+    anonymous ops?
 
-$server->command("msg $nick - quote <STK>");
-  $server->command("msg $nick To display current stock quote of <STK> from Yahoo Finance");
+- quote <STK>
+  To display current stock quote of <STK> from Yahoo Finance
 
-$server->command("msg $nick - define <WORD>");
- $server->command("msg $nick To display the MW definition of <WORD>");
+- define <WORD>
+ To display the MW definition of <WORD>
 
-$server->command("msg $nick - jargon <WORD>");
- $server->command("msg $nick To display the jargin file entry for <WORD>");
+- jargon <WORD>
+ To display the jargin file entry for <WORD>
 
-$server->command("msg $nick - broadcast message here");
-  $server->command("msg $nick To display a message to all channels $self is currently on.");
-  $server->command("msg $nick * $self heard message here");
-  $server->command("msg $nick NOTE:  Don't abuse or it will be removed");
+- broadcast message here
+  To display a message to all channels $self is currently on.
+  * $self heard message here
+  NOTE:  Don't abuse or it will be removed
 
 
-$server->command("msg $nick In #channel Command");
-$server->command("msg $nick - $self version");
-  $server->command("msg $nick To display the current version of Kaiko, as defined in the config file");
+In #channel Command
+- $self version
+  To display the current version of Kaiko, as defined in the config file
 
-$server->command("msg $nick - $self info <user>");
-  $server->command("msg $nick To display the last known info about a user");
-  $server->command("msg $nick * $self last saw <user> on <date>  from <host>");
+- $self info <user>
+  To display the last known info about a user
+  * $self last saw <user> on <date>  from <host>
 
-$server->command("msg $nick - $self broadcast message here");
-  $server->command("msg $nick To display a message to all channels $self is currently on.");
-  $server->command("msg $nick * $self heard message here");
+- $self broadcast message here
+  To display a message to all channels $self is currently on.
+  * $self heard message here
 
-$server->command("msg $nick - $self define");
- $server->command("msg $nick To display the MW definition of WORD to the channel");
+- $self define
+ To display the MW definition of WORD to the channel
 
-$server->command("msg $nick - $self jargon");
- $server->command("msg $nick To display the jargon file entry for WORD to the channel");
+- $self jargon
+ To display the jargon file entry for WORD to the channel
 
-$server->command("msg $nick - who/what is ...?");
-  $server->command("msg $nick as $self listens to the channel, she picks up bits of info");
-  $server->command("msg $nick She will tell if she has heard anything  about the subject");
+- who/what is ...?
+  as $self listens to the channel, she picks up bits of info
+  She will tell if she has heard anything  about the subject
 
-$server->command("msg $nick - $self sleep <min>");
- $server->command("msg $nick To make $self not respond to anything in public channels for <min> minutes");
- $server->command("msg $nick Issueing a sleep command while $self is asleep will tell you how long until");
-    $server->command("msg $nick $self wakes up");
-
+- $self sleep <min>
+ To make $self not respond to anything in public channels for <min> minutes
+ Issueing a sleep command while $self is asleep will tell you how long until
+    $self wakes up
+");
     $server->command("msg $nick and overall, I try and be witty");
     return 0;
   }
@@ -503,10 +472,7 @@ $server->command("msg $nick - $self sleep <min>");
     my $word = $1;
     my $def = define($word, 'wn');
     if ($def) {
-      $server->command("msg $nick according to WordNet: ");
-      for my $line (split(/\n/,$def)) {
-        $server->command("msg $nick $line");
-      }
+      $server->command("msg $nick according to WordNet, $def");
     } else {
       $server->command("msg $nick sorry, don't know what '$word' means");
     }
@@ -530,7 +496,7 @@ $server->command("msg $nick - $self sleep <min>");
 sub save_memory {
   my $mem = $conf{config}{memory}[0];
   if ($mem !~ /^\//) {
-    $mem = "$home/$mem";
+    $mem = "$ENV{HOME}/.silc/$mem";
   }
   open(MEM,">$mem");
   print MEM "# This File Should Not Be Edited\n";
@@ -547,7 +513,7 @@ sub save_memory {
 sub load_memory {
   my $mem = $conf{config}{memory}[0];
   if ($mem !~ /^\//) {
-    $mem = "$home/$mem";
+    $mem = "$ENV{HOME}/.silc/$mem";
   }
   open(MEM,"$mem") or add_log("ERROR Opening MEMORY($mem): $!");
   my @memory = <MEM>;
@@ -567,8 +533,8 @@ sub load_memory {
 }
 sub reload {
   my ($server, $nick) = @_;
-  my $md51 = `$md5_cmd  $kaiko`;
-  my $c_md51 = `$md5_cmd $conf`;
+  my $md51 = `$md5_cmd  $ENV{HOME}/.silc/scripts/kaiko.pl`;
+  my $c_md51 = `$md5_cmd $ENV{HOME}/.silc/kaiko.conf`;
   chomp $md51;
   chomp $c_md51;
   add_log("Check MD5 => $md51") if ($DEBUG);
@@ -580,7 +546,7 @@ sub reload {
     return 0;
   }
   if ($c_md5 ne $c_md51) {
-    load_conf("$conf");
+    load_conf("$ENV{HOME}/.silc/kaiko.conf");
     $server->command("msg $nick ok, I reloaded my personality");
     return 0;
   }

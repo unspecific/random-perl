@@ -35,14 +35,14 @@ ToDo: <br>
      rights or you have op rights for that channel in the 
      config anonymous ops?
 
- - quote <STK>
-   To display current stock quote of <STK> from Yahoo Finance
+ - quote &gt;STK>
+   To display current stock quote of &gt;STK> from Yahoo Finance
  
- - define <WORD>
-  To display the MW definition of <WORD>
+ - define &gt;WORD>
+  To display the MW definition of &gt;WORD>
  
- - jargon <WORD>
-  To display the jargin file entry for <WORD>
+ - jargon &gt;WORD>
+  To display the jargin file entry for &gt;WORD>
  
  - broadcast message here
    To display a message to all channels kaiko is currently on.
@@ -55,9 +55,9 @@ ToDo: <br>
    To display the current version of Kaiko, as defined in 
      the config file
  
- - kaiko info <user>
+ - kaiko info &gt;user>
    To display the last known info about a user
-   * kaiko last saw <user> on <date>  from <host>
+   * kaiko last saw &gt;user> on &gt;date>  from &gt;host>
  
  - kaiko broadcast message here
    To display a message to all channels kaiko is currently on.
@@ -73,9 +73,9 @@ ToDo: <br>
    as kaiko listens to the channel, she picks up bits of info
    She will tell if she has heard anything  about the subject
  
- - kaiko sleep <min>
+ - kaiko sleep &gt;min>
   To make kaiko not respond to anything in public channels 
-    for <min> minutes
+    for &gt;min> minutes
   Issueing a sleep command while kaiko is asleep will tell
     you how long until kaiko wakes up
 
