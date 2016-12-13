@@ -1,10 +1,10 @@
 
-
+# H1
 count.pl
 
 mbox counting at its... well, it works
 
-
+# H1
 Description
 
 Wirten by: MadHat at Unspecific.com [[|%^)
@@ -12,7 +12,7 @@ count.pl is to keep score on some of the mailing lists I have been on for a whil
 I have tested it with mutt, pine, evolution, and Eudora.
 
 
-
+# H1
 Features
 
 count on email, domain or suffix
@@ -28,13 +28,13 @@ can show % of email by each person that contain HTML, RTF, or attachments (see -
 can show Total number of replies referencing each address (see -T)
 
 
-
+# H1
 BUGS
 
 some MS clients don't seem to properly attribute quoted lines, so it has trouble there, but there is nothing I can do about that.
 
 
-
+# H1
 Requirements
 
 perl (>5.6 prefered)
@@ -44,15 +44,16 @@ Bundle::LWP if you are going to use the http get of mailboxes
 gzip or gunzip if you are going to use compressed mailboxes. (if you don't know where to find them.... no comment)
 
 
-
+# H1
 Download
 
 count.pl - v2.4.0
 
-
+# H1
 Output
 
 An example of the output...
+```
 $ ./count.pl -e -f01/01/2002 -t01/31/2002 -m 5 subfolders/Folder/mbox
 Start Date: Jan  1, 2002
 End Date:   Jan 31, 2002
@@ -94,9 +95,12 @@ Total Unique Entries: 12
   3 latida@unsc.net                      5     124     41    33      1
   4 ugabooga@msn.com                     4     181     39    22      4
   5 loser@attbi.com                      3      54     39    72      0
+```
 
+# H1
 Usage (output from ./count.pl -h)
 
+```
  count - 2.2.1 - The email counter by: MadHat<madhat@unspecific.com>
 
 ./count <-e|-d|-s> [-ENLGTl] [-m#] [-f <from_date> -t <to_date>]\
@@ -118,6 +122,7 @@ Usage (output from ./count.pl -h)
         -tmm/dd/yyyy To date. Stop checking after this date [today]
         <mailbox> is the mailbox to count in...
 
+```
 
 'count' will open the disgnated mailbox and sort through the emails counting
 on the specified results.
@@ -182,6 +187,7 @@ specify a date range using the -f and -t options
       The information is gathered from the 'In-Reply-To' and
       'Reference' headers.
 
+# H1
 ChangeLog
 
 2.4
