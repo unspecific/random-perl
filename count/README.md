@@ -181,6 +181,7 @@ specify a date range using the -f and -t options
 
 # ChangeLog
 
+```
 2.4
 Fixed a problem with Dates (stripping last day in some instances)
 Removed GPG sigs from being counted
@@ -216,8 +217,7 @@ Specifically, this is a % of mails that include one of these, since it is standa
 2.1
 INIT CHANGE LOG
  
- 
- 
+```
  
  http://www.unspecific.com/.go/count/
 
