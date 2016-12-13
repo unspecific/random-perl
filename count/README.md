@@ -1,19 +1,16 @@
 
-# H1
-count.pl
+# count.pl
 
 mbox counting at its... well, it works
 
-# H1
-Description
+# Description
 
 Wirten by: MadHat at Unspecific.com [[|%^)
 count.pl is to keep score on some of the mailing lists I have been on for a while. What it does is count the emails, domains or suffixes to tell how many emails, lines and new lines have been posted to the list. It reads a standard mbox format files.
 I have tested it with mutt, pine, evolution, and Eudora.
 
 
-# H1
-Features
+# Features
 
 count on email, domain or suffix
 sort on number of messages (-E), number of lines (-L), number of new lines (-N) or the amount of grabage (-G) sent (quoted lines)
@@ -28,14 +25,12 @@ can show % of email by each person that contain HTML, RTF, or attachments (see -
 can show Total number of replies referencing each address (see -T)
 
 
-# H1
-BUGS
+# BUGS
 
 some MS clients don't seem to properly attribute quoted lines, so it has trouble there, but there is nothing I can do about that.
 
 
-# H1
-Requirements
+# Requirements
 
 perl (>5.6 prefered)
 Date::Manip perl module
@@ -44,13 +39,11 @@ Bundle::LWP if you are going to use the http get of mailboxes
 gzip or gunzip if you are going to use compressed mailboxes. (if you don't know where to find them.... no comment)
 
 
-# H1
-Download
+# Download
 
 count.pl - v2.4.0
 
-# H1
-Output
+# Output
 
 An example of the output...
 ```
@@ -97,8 +90,7 @@ Total Unique Entries: 12
   5 loser@attbi.com                      3      54     39    72      0
 ```
 
-# H1
-Usage (output from ./count.pl -h)
+# Usage (output from ./count.pl -h)
 
 ```
  count - 2.2.1 - The email counter by: MadHat<madhat@unspecific.com>
@@ -187,8 +179,7 @@ specify a date range using the -f and -t options
       The information is gathered from the 'In-Reply-To' and
       'Reference' headers.
 
-# H1
-ChangeLog
+# ChangeLog
 
 2.4
 Fixed a problem with Dates (stripping last day in some instances)
