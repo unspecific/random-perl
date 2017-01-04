@@ -46,16 +46,21 @@
 # Specifies subject lines to ignore during URL rollup
 
 use warnings;
+#   use strict;
 use Getopt::Std;
 use Date::Manip;
 use Mail::MboxParser;
 use Data::Dumper;
-$VERSION = '2.4.16';
+my $VERSION = '2.4.16';
 
 #######################################################
 
 our $opt_D = 0;
-our ($opt_L, $opt_N, $opt_G, $opt_T, $PGPSig);
+our ($opt_L, $opt_N, $opt_G, $opt_T, $opt_v, $opt_d, $opt_e, $opt_s,
+     $opt_l, $opt_u, $opt_h, $opt_M, $opt_H, $opt_t, $opt_f, $opt_m, $opt_S);
+my ($URL, $contribc, %contrib, %html, %url_list, %lines, %new_lines, %count,
+    %replyto, @keys, $bad, $counter, $count2, %mailer, %msgid, %tracker,
+    %urls, %unordered, $Mcounter, %mailer_agent, %track, %skipped);
 
 getopts('edsMhluELNGTHD:m:f:t:S:v');
 if ($opt_D) { print "DEBUG\n"; $opt_v = 1; }
@@ -67,10 +72,12 @@ print "<pre>\n" if ($opt_H);
 $opt_t = 'today' unless ($opt_t);
 $opt_f = 'Dec 31, 1969' unless ($opt_f);
 print "$opt_f - $opt_t\n" if ($opt_v);
-$date1 = &ParseDate("$opt_f 00:00:00");
-$date2 = &ParseDate("$opt_t 23:59:59");
-$mailbox = $ARGV[0];
+my $date1 = &ParseDate("$opt_f 00:00:00");
+my $date2 = &ParseDate("$opt_t 23:59:59");
+my $mailbox = $ARGV[0];
+my $tmpbox;
 if ($mailbox =~ /^http\:/) {
+  my $tmpfile;
   print "Using LWP to fect mailbox\n" if ($opt_v);
   eval {
     if ($mailbox =~ /gz$/) {
@@ -90,7 +97,7 @@ if ( ! -e $mailbox ) {
 }
 if ($mailbox =~ /\.gz$/) {
   print "Decompresing mailbox\n" if ($opt_v);
-  $gzip = `which gunzip 2>/dev/null`;
+  my $gzip = `which gunzip 2>/dev/null`;
   if ( !$gzip ) {
     print "Unable to find gunzip to decompress file.\n" if ($opt_v);
     $gzip = `which gzip 2>/dev/null`;
@@ -105,27 +112,36 @@ if ($mailbox =~ /\.gz$/) {
   $mailbox =~ s/\.gz$//;
 }
 print "Opening mailbox $mailbox\n" if ($opt_v);
-$mbx = Mail::MboxParser->new($mailbox);
+my $mbx = Mail::MboxParser->new($mailbox);
 $mbx->make_index;
-$msgc = 0;
+my $msgc = 0;
 print "Evaluating messages\n" if ($opt_v);
-MESSAGE: for $msg ($mbx->get_messages) {
+MESSAGE: for my $msg ($mbx->get_messages) {
   printf STDERR '-' x 72 . "\nMSG Num: %6.5d\nMSG Start Pos: %10.10d\n",
     $msgc, $mbx->get_pos($msgc) . "\n" if ($opt_D);
-  my $lines = $new_lines = $html = $toppost = $quotes = $footer = $PGP = $PGPSig = 0;
-  $date = $msg->header->{'date'};
-  $date3 = &ParseDate($date);
-  $start = &Date_Cmp($date1,$date3);
-  $end = &Date_Cmp($date2,$date3);
+  my $lines = 0;
+  my $new_lines = 0;
+  my $html = 0;
+  my $toppost = 0;
+  my $quotes = 0;
+  my $footer = 0;
+  my $PGP = 0;
+  my $PGPsig = 0;
+  my $who;
+  my $sto;
+  my $date = $msg->header->{'date'};
+  my $date3 = &ParseDate($date);
+  my $start = &Date_Cmp($date1,$date3);
+  my $end = &Date_Cmp($date2,$date3);
   print STDERR "Date_Cmp: $date1 < $date3 > $date2\n" if ($opt_D > 1);
   print STDERR "Date_Cmp: $start <= 0 => $end\n" if ($opt_D > 1);
   if ( $start <= 0 and $end >= 0) {
     printf STDERR "Matched MSG Num: %6.5d\n", $msgc if ($opt_D);
     if ($opt_D > 4) {
-      $headers = $msg->header;
-      for $head (sort keys %$headers) {
+      my $headers = $msg->header;
+      for my $head (sort keys %$headers) {
         if (@{$msg->header->{$head}}) {
-          for $value (@{$msg->header->{$head}}) {
+          for my $value (@{$msg->header->{$head}}) {
             print STDERR "HEADER:::$head => $value\n"
           }
         } else {
@@ -140,7 +156,7 @@ MESSAGE: for $msg ($mbx->get_messages) {
     if ($to = $msg->header->{'to'}) {
       $to =~ s/^[\s\S]*\<([\w\d\-\$\+\.\@\%\]\[]+)\>.*$/$1/;
       $to =~ /^([\w\.\-]+)\@.*\.\w+$/;
-      my $sto = $1;
+      $sto = $1;
       print STDERR "To: $to ($sto)\n" if ($opt_D > 1);
     } else {
       print STDERR "No To\n" if ($opt_D > 1);
@@ -169,7 +185,7 @@ MESSAGE: for $msg ($mbx->get_messages) {
       $msgid{$msgid}++;
     }
     $count2++;
-    $email = $msg->from->{'email'};
+    my $email = $msg->from->{'email'};
     print STDERR "From: $email\n" if ($opt_D > 1);
     $email =~ tr/[A-Z]/[a-z]/;
     $email =~ s/[\<\>]//g;
@@ -267,7 +283,7 @@ MESSAGE: for $msg ($mbx->get_messages) {
       }
       if ($mailer) {
         &init();
-        for $agent (keys %mailer_agent) {
+        for my $agent (keys %mailer_agent) {
           if ($mailer =~ /^$agent/) {
             print STDERR "$mailer -> $agent -> $mailer_agent{$agent}\n"
               if ($opt_D > 1);
@@ -305,14 +321,14 @@ MESSAGE: for $msg ($mbx->get_messages) {
         if ($opt_D > 4);
     }
     my $body = $msg->body($msg->find_body);
-    @msg_body = $body->as_lines;
+    my @msg_body = $body->as_lines;
     if ($msg->is_multipart) {
-      @parts = $msg->parts;
+      my @parts = $msg->parts;
       if (@parts and $opt_l and !$html) {
         print STDERR "Message $count2 has multiple parts\n" if ($opt_D);
         print STDERR "Testing message $count2 for 'bad' parts\n" if ($opt_D);
         my $i;
-        PARTS: for $i (0..$#parts) {
+        PARTS: for my $i (0..$#parts) {
           my $part_type = $parts[$i]->effective_type;
           if ($part_type =~ /^text\/html|enriched/i
               or $part_type =~ /^image|audio|application\/[^pgp-]/i
@@ -378,33 +394,33 @@ MESSAGE: for $msg ($mbx->get_messages) {
         }
         if ($opt_u) {
           if (/(https?\:\/\/\S+)/) {
-					  my $site = $1;
-					  chomp $site;
-					  $site =~ s/[\>\.\)]*$//;
-					  $sub =~ s/^re\:\s//i;
-					  $sub =~ s/^\[[\w\-\d\:]+\]\s//i;
-					  if ($site =~ /(yahoo|msn|hotjobs|hotmail|your\-name|pgp|excite)\.com\/?$/
-			    			or $site =~ /(promo|click|docs)\.yahoo\.com/
-					    	or $site =~ /(join|explorer|messenger|mobile)\.msn\.com/
-		    				or ($sto and $site =~ /mailman\/listinfo\/$sto$/)
-				    		or $skipped{$site}
-				    		or (defined($opt_S) and $sub =~ /$opt_S/)) {
-							$skipped{$site}++;
-							print STDERR "Skipping $site ($skipped{$site})\n"
-							. " - from message '$sub'\n - from $who\n\n"
-							if ($opt_D > 1);
-						} else {
-							if (!$urls{$site}) {
-								print STDERR "Adding $site\n from message '$sub'\n from $who\n\n"
-								if ($opt_D > 1);
-								$contrib{$who}++;
-								$urls{$site} = $sub;
-								push @{$url_list{$sub}}, $site;
-							} else {
-								print STDERR "Skipping (duplicate) $site\n  from message '$sub'\n  from $who\n\n"
-								if ($opt_D > 1);
-							}
-						}
+            my $site = $1;
+            chomp $site;
+            $site =~ s/[\>\.\)]*$//;
+            $sub =~ s/^re\:\s//i;
+            $sub =~ s/^\[[\w\-\d\:]+\]\s//i;
+            if ($site =~ /(yahoo|msn|hotjobs|hotmail|your\-name|pgp|excite)\.com\/?$/
+                or $site =~ /(promo|click|docs)\.yahoo\.com/
+                or $site =~ /(join|explorer|messenger|mobile)\.msn\.com/
+                or ($sto and $site =~ /mailman\/listinfo\/$sto$/)
+                or $skipped{$site}
+                or (defined($opt_S) and $sub =~ /$opt_S/)) {
+              $skipped{$site}++;
+              print STDERR "Skipping $site ($skipped{$site})\n"
+              . " - from message '$sub'\n - from $who\n\n"
+              if ($opt_D > 1);
+            } else {
+              if (!$urls{$site}) {
+                print STDERR "Adding $site\n from message '$sub'\n from $who\n\n"
+                if ($opt_D > 1);
+                $contrib{$who}++;
+                $urls{$site} = $sub;
+                push @{$url_list{$sub}}, $site;
+              } else {
+                print STDERR "Skipping (duplicate) $site\n  from message '$sub'\n  from $who\n\n"
+                if ($opt_D > 1);
+              }
+            }
           }
         }
         print STDERR "NEW($new_lines, $lines) $_" if ($opt_D > 2);
@@ -499,7 +515,7 @@ if ($opt_M) {
   @keys = sort {
     $mailer{$b} <=> $mailer{$a}
   } keys %mailer;
-  $count = @keys;
+  my $count = @keys;
   print "EMails Found: $Mcounter\n";
   print "Unique Agents: $count\n\n";
   print "  #    %    Client\n";
@@ -541,7 +557,7 @@ die $@ if $@;
 
 print '-' x 75 . "\n" if ($opt_v);
 print "count v$VERSION by MadHat(at)Unspecific.com - [[|%^)
-    http://www.unspecific.com/.go/count/
+    https://github.com/unspecific/random-perl/tree/master/count
 --\n\n"
   if ($opt_v);
 print "Total emails checked: $count2\n" if ($opt_v);
@@ -551,10 +567,12 @@ print "End Date:   " . UnixDate($date2, "%b %e, %Y") . "\n"
   if ($opt_f or $opt_t);
 print "Total emails matched: $counter\n"; # if ($counter != $count2);
 print "Total emails from losers: $bad\n" if ($bad and $opt_l);
-$number = keys %count;
+my $number = keys %count;
 print "Total Unique Entries: $number\n";
-$max_count = $opt_m?$opt_m:50;
+my $max_count = $opt_m?$opt_m:50;
+my $current_number =  0;
 for $id (@keys) {
+  next if (!$id);
   $perc = 0;
   $loser = 0;
   $replyto{$id} = $replyto{$id}?$replyto{$id}:'0';
@@ -664,7 +682,7 @@ specify a date range using the -f and -t options
 
  -u Add list of URLs found in the date range
     create a list of URLs found, with Subject of the email listed for each URL
-	-Ssubject will ignore any messages with the specified subject.
+  -Ssubject will ignore any messages with the specified subject.
 
  -l Add loser rating.  I added this because I use this on mailing lists.
       Most mailing lists I am on, consider it bad to post HTML or attachments
@@ -684,14 +702,14 @@ specify a date range using the -f and -t options
 }
 
 sub load_formats {
-  $flt0 = "format STDOUT_TOP =";
-  $flt2 = "    Address                     EMails  Lines   New   S/N ";
-  $flt3 = "                                Posted  Posted Lines Ratio";
-  $flt4 = ".";
-  $fl0 =  "format STDOUT = ";
-  $fl1 =  "@>> @<<<<<<<<<<<<<<<<<<<<<<<<<<< @>>>>  @>>>> @>>>>> @## ";
-  $fl2 =  "\$current_number, \$id, \$count{\$id}, \$lines{\$id},\$new_lines{\$id}, \$perc";
-  $fl3 =  ".";
+  our $flt0 = "format STDOUT_TOP =";
+  our $flt2 = "    Address                     EMails  Lines   New   S/N ";
+  our $flt3 = "                                Posted  Posted Lines Ratio";
+  our $flt4 = ".";
+  our $fl0 =  "format STDOUT = ";
+  our $fl1 =  "@>> @<<<<<<<<<<<<<<<<<<<<<<<<<<< @>>>>  @>>>> @>>>>> @## ";
+  our $fl2 =  "\$current_number, \$id, \$count{\$id}, \$lines{\$id},\$new_lines{\$id}, \$perc";
+  our $fl3 =  ".";
 
   if ($opt_l) {
     print "Displaying Loser Ratings\n" if ($opt_v);
@@ -705,7 +723,8 @@ sub load_formats {
     $fl1 .=  "@>>>> ";
     $fl2 .=  ", \$replyto{\$id}";
   }
-  $format = join ("\n", $flt0, "\n", $flt2, $flt3, $flt4, $fl0, $fl1, $fl2, $fl3);
+  $format = join ("\n", $flt0, "\n", $flt2, $flt3,
+                         $flt4, $fl0, $fl1, $fl2, $fl3);
 
   eval $format;
 }
