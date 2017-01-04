@@ -56,13 +56,13 @@ my $VERSION = '2.4.16';
 #######################################################
 
 our $opt_D = 0;
-our ($opt_L, $opt_N, $opt_G, $opt_T, $opt_v, $opt_d, $opt_e, $opt_s,
+our ($opt_L, $opt_N, $opt_G, $opt_T, $opt_v, $opt_d, $opt_e, $opt_s, $opt_c,
      $opt_l, $opt_u, $opt_h, $opt_M, $opt_H, $opt_t, $opt_f, $opt_m, $opt_S);
 my ($URL, $contribc, %contrib, %html, %url_list, %lines, %new_lines, %count,
     %replyto, @keys, $bad, $counter, $count2, %mailer, %msgid, %tracker,
     %urls, %unordered, $Mcounter, %mailer_agent, %track, %skipped);
 
-getopts('edsMhluELNGTHD:m:f:t:S:v');
+getopts('cedsMhluELNGTHD:m:f:t:S:v');
 if ($opt_D) { print "DEBUG\n"; $opt_v = 1; }
 
 if ( !($opt_e xor $opt_d xor $opt_s xor $opt_M) or $opt_h ) { &usage }
@@ -580,7 +580,20 @@ for $id (@keys) {
   last if ($current_number > $max_count);
   $perc = $new_lines{$id} / $lines{$id} * 100 if ($lines{$id});
   $loser = $html{$id} / $count{$id} * 100 if ($html{$id} > 0);
-  write;
+  if ($opt_c) {
+    $perc = int($perc);
+    $loser = int($loser);
+    print "$current_number, $id, $count{$id}, $lines{$id},$new_lines{$id}, $perc";
+    if ($opt_l) {
+      print ",$loser"      
+    }
+    if ($opt_T) {
+       print ",$replyto{$id}";
+    }
+    print "\n";
+  } else {
+    write;
+  }
 }
 if ($opt_u) {
   print "\n--\n\n";
@@ -610,7 +623,8 @@ sub usage {
 $0 <-e|-d|-s|-M> [-ENLGTlu] [-m#] [-f <from_date> -t <to_date>] <mailbox | http://domain.com/archive/mailbox>\n"
   . "\t-h Full Help";
   print " (not just this stuff)" if (!$opt_h);
-  print "\n\t-e email address\n"
+  print "\n\t-c export in CSV\n"
+  . "\t-e email address\n"
   . "\t-d count domains\n"
   . "\t-s count suffix (.com, .org, etc...)\n"
   . "\t-M count Mailer Agents\n"
