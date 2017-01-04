@@ -571,6 +571,16 @@ my $number = keys %count;
 print "Total Unique Entries: $number\n";
 my $max_count = $opt_m?$opt_m:50;
 my $current_number =  0;
+if ($opt_c) {
+  print "no,address,emails,lines,new lines,s/n";
+  if ($opt_l) {
+    print ",L";
+  }
+  if ($opt_T) {
+     print ",T";
+  }
+  print "\n";
+}
 for $id (@keys) {
   next if (!$id);
   $perc = 0;
@@ -585,7 +595,7 @@ for $id (@keys) {
     $loser = int($loser);
     print "$current_number, $id, $count{$id}, $lines{$id},$new_lines{$id}, $perc";
     if ($opt_l) {
-      print ",$loser"      
+      print ",$loser";
     }
     if ($opt_T) {
        print ",$replyto{$id}";
