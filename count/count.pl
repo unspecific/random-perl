@@ -5,9 +5,9 @@
 #   Writen by MadHat (madhat@unspecific.com)
 # http://www.unspecific.com/count/
 #
-# count.pl is to keep score on some of the mailing lists I have been 
-# on for a while. What it does is count the emails, domains or suffixes 
-# to tell how many emails, lines and new lines have been posted to the 
+# count.pl is to keep score on some of the mailing lists I have been
+# on for a while. What it does is count the emails, domains or suffixes
+# to tell how many emails, lines and new lines have been posted to the
 # list. It reads a standard mbox format files.
 # I have tested it with mutt, pine, evolution, and Eudora.
 #
@@ -41,19 +41,29 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 #---------------------------------------
+#
+# modification sa1 - 2011-05-01 - sentimental-asshole@dotorg.org
+# Specifies subject lines to ignore during URL rollup
+
+use warnings;
 use Getopt::Std;
 use Date::Manip;
 use Mail::MboxParser;
-local ($opt_L, $opt_N, $opt_G);
-$VERSION = '2.4.15';
+use Data::Dumper;
+$VERSION = '2.4.16';
 
-getopts('edsMhluELNGTHD:m:f:t:v');
-if ($opt_D) { $opt_v = 1; }
+#######################################################
+
+our $opt_D = 0;
+our ($opt_L, $opt_N, $opt_G, $opt_T, $PGPSig);
+
+getopts('edsMhluELNGTHD:m:f:t:S:v');
+if ($opt_D) { print "DEBUG\n"; $opt_v = 1; }
 
 if ( !($opt_e xor $opt_d xor $opt_s xor $opt_M) or $opt_h ) { &usage }
 
 print "<pre>\n" if ($opt_H);
- 
+
 $opt_t = 'today' unless ($opt_t);
 $opt_f = 'Dec 31, 1969' unless ($opt_f);
 print "$opt_f - $opt_t\n" if ($opt_v);
@@ -100,7 +110,7 @@ $mbx->make_index;
 $msgc = 0;
 print "Evaluating messages\n" if ($opt_v);
 MESSAGE: for $msg ($mbx->get_messages) {
-  printf STDERR '-' x 72 . "\nMSG Num: %6.5d\nMSG Start Pos: %10.10d\n", 
+  printf STDERR '-' x 72 . "\nMSG Num: %6.5d\nMSG Start Pos: %10.10d\n",
     $msgc, $mbx->get_pos($msgc) . "\n" if ($opt_D);
   my $lines = $new_lines = $html = $toppost = $quotes = $footer = $PGP = $PGPSig = 0;
   $date = $msg->header->{'date'};
@@ -126,28 +136,37 @@ MESSAGE: for $msg ($mbx->get_messages) {
     }
     my $msgid = $msg->header->{'message-id'};
     $msgid =~ s/[\<\>]//g;
-    my $to = $msg->header->{'to'};
-    $to =~ s/^[\s\S]*\<([\w\d\-\$\+\.\@\%\]\[]+)\>.*$/$1/;
-    $to =~ /^([\w\.\-]+)\@.*\.\w+$/;
-    my $sto = $1;
-    print STDERR "To: $to ($sto)\n" if ($opt_D > 1);
+    my $to;
+    if ($to = $msg->header->{'to'}) {
+      $to =~ s/^[\s\S]*\<([\w\d\-\$\+\.\@\%\]\[]+)\>.*$/$1/;
+      $to =~ /^([\w\.\-]+)\@.*\.\w+$/;
+      my $sto = $1;
+      print STDERR "To: $to ($sto)\n" if ($opt_D > 1);
+    } else {
+      print STDERR "No To\n" if ($opt_D > 1);
+
+    }
     my $sub = $msg->header->{'subject'};
     if ($opt_l and ($sub eq '(no subject)' or $sub eq '') ) { $html++; $bad++ }
     print STDERR "Subject: $sub\n" if ($opt_D > 1);
-    my $references = $msg->header->{'references'};
-    $references =~ s/\s*//g;
-    $references =~ s/\<([\w\d\-\$\.\@\%\]\[]+)\>/$1\n/g;
-    my $replyto = $msg->header->{'in-reply-to'};
-    $replyto =~ s/\s*//g;
-    $replyto =~ s/^\s*\<([\w\d\-\$\.\@\%\]\[]+)\>.*$/$1/;
+    my $references;
+    if ($references = $msg->header->{'references'}) {
+      $references =~ s/\s*//g;
+      $references =~ s/\<([\w\d\-\$\.\@\%\]\[]+)\>/$1\n/g;
+    }
+    my $replyto;
+    if ($replyto = $msg->header->{'in-reply-to'}) {
+      $replyto =~ s/\s*//g;
+      $replyto =~ s/^\s*\<([\w\d\-\$\.\@\%\]\[]+)\>.*$/$1/;
+    }
     print STDERR "Message-ID: $msgid\n" if ($opt_D > 1);
     print STDERR "In-Reply-To: $replyto\n" if ($opt_D > 1 and $replyto);
     print STDERR "References: $references\n" if ($opt_D > 1 and $references);
-    if ( $msgid{$msgid} ) { 
+    if ( $msgid{$msgid} ) {
       print STDERR "Duplicate Message: $msgid\n" if ($opt_D);
-      next; 
-    } else { 
-      $msgid{$msgid}++; 
+      next;
+    } else {
+      $msgid{$msgid}++;
     }
     $count2++;
     $email = $msg->from->{'email'};
@@ -165,7 +184,7 @@ MESSAGE: for $msg ($mbx->get_messages) {
       $email =~ /^[\w\.\-]+\@.*(\.\w+)$/;
       $who = $1;
     }
-    if ($opt_M) { 
+    if ($opt_M) {
       $Mcounter++;
       my $mailer;
       if ($mailer = $msg->header->{'x-mailer'}) {
@@ -250,7 +269,7 @@ MESSAGE: for $msg ($mbx->get_messages) {
         &init();
         for $agent (keys %mailer_agent) {
           if ($mailer =~ /^$agent/) {
-            print STDERR "$mailer -> $agent -> $mailer_agent{$agent}\n" 
+            print STDERR "$mailer -> $agent -> $mailer_agent{$agent}\n"
               if ($opt_D > 1);
             $mailer{$mailer_agent{$agent}}++;
             next MESSAGE;
@@ -271,13 +290,13 @@ MESSAGE: for $msg ($mbx->get_messages) {
       print STDERR "Matched: $who\n" if ($opt_D > 1);
     }
     if (
-         $msg->header->{'x-originating-ip'} 
-       and 
+         $msg->header->{'x-originating-ip'}
+       and
          $track{$msg->header->{'x-originating-ip'}}
-       and 
+       and
          $track{$msg->header->{'x-originating-ip'}} ne $who
        ) {
-      print STDERR "TRACE::" . $track{$msg->header->{'x-originating-ip'}} 
+      print STDERR "TRACE::" . $track{$msg->header->{'x-originating-ip'}}
         . " and $who using " . $msg->header->{'x-originating-ip'} . "\n"
         if ($opt_D > 4);
     } elsif ($msg->header->{'x-originating-ip'}) {
@@ -308,6 +327,7 @@ MESSAGE: for $msg ($mbx->get_messages) {
         }
       }
     }
+    my $body_count = $#msg_body;
     LINE: for (@msg_body) {
       next LINE if ( m/^$/ );
       #  Need to check for footers and Sigs and stuff
@@ -315,7 +335,7 @@ MESSAGE: for $msg ($mbx->get_messages) {
         print STDERR "Possible Footer\n" if ($opt_D > 1);
         $footer++;
       } elsif ($footer and /^Do You Yahoo!\?$/) {
-        print STDERR "Yep, its a Yahoo footer, Skipping to next Message\n" 
+        print STDERR "Yep, its a Yahoo footer, Skipping to next Message\n"
           if ($opt_D > 1);
         next MESSAGE;
       } elsif (/^-----BEGIN PGP SIGNED MESSAGE-----$/) {
@@ -340,44 +360,51 @@ MESSAGE: for $msg ($mbx->get_messages) {
         print STDERR "PGP::$who $_" if ($opt_D > 4);
         $PGPsig--;
         next LINE;
+      } elsif (/^--\s*$/ and $lines <= ($body_count - 6)) {
+        print STDERR "Possible Footer\n" if ($opt_D > 1);
+        last LINE;
       }
       #####################################
       $lines++;
       if ( ! m/^[ \t]*$|^[ \t]*[>:]|^\.\s\:\s/ ) {
         $new_lines++;
+        # print STDERR "LINES:$lines NEW_LINES:$new_lines QUOTES:$quotes\n" if ($opt_D > 6);
         if ($new_lines > 1 and !$quotes) {
+          print STDERR "TOPPOST:$toppost\n" if ($opt_D > 6);
           $toppost++;
         } elsif ($quotes and $toppost) {
+          print STDERR "TOPPOST:! $toppost\n" if ($opt_D > 6);
           $toppost = 0;
         }
         if ($opt_u) {
           if (/(https?\:\/\/\S+)/) {
-            my $site = $1;
-            chomp $site;
-            $site =~ s/[\>\.\)]*$//;
-            $sub =~ s/^re\:\s//i;
-            $sub =~ s/^\[[\w\-\d\:]+\]\s//i;
-            if ($site =~ /(yahoo|msn|hotjobs|hotmail|your\-name|pgp|excite)\.com\/?$/
-               or $site =~ /(promo|click|docs)\.yahoo\.com/
-               or $site =~ /(join|explorer|messenger|mobile)\.msn\.com/
-               or $site =~ /mailman\/listinfo\/$sto$/
-               or $skipped{$site}) {
-              $skipped{$site}++;
-              print STDERR "Skipping $site ($skipped{$site})\n"
-                . " - from message '$sub'\n - from $who\n\n" 
-                if ($opt_D > 1);
-            } else {
-              if (!$urls{$site}) {
-                print STDERR "Adding $site\n from message '$sub'\n from $who\n\n" 
-                  if ($opt_D > 1);
-                $contrib{$who}++;
-                $urls{$site} = $sub;
-                push @{$url_list{$sub}}, $site;
-              } else {
-                print STDERR "Skipping (duplicate) $site\n  from message '$sub'\n  from $who\n\n" 
-                  if ($opt_D > 1);
-              }
-            }
+					  my $site = $1;
+					  chomp $site;
+					  $site =~ s/[\>\.\)]*$//;
+					  $sub =~ s/^re\:\s//i;
+					  $sub =~ s/^\[[\w\-\d\:]+\]\s//i;
+					  if ($site =~ /(yahoo|msn|hotjobs|hotmail|your\-name|pgp|excite)\.com\/?$/
+			    			or $site =~ /(promo|click|docs)\.yahoo\.com/
+					    	or $site =~ /(join|explorer|messenger|mobile)\.msn\.com/
+		    				or ($sto and $site =~ /mailman\/listinfo\/$sto$/)
+				    		or $skipped{$site}
+				    		or (defined($opt_S) and $sub =~ /$opt_S/)) {
+							$skipped{$site}++;
+							print STDERR "Skipping $site ($skipped{$site})\n"
+							. " - from message '$sub'\n - from $who\n\n"
+							if ($opt_D > 1);
+						} else {
+							if (!$urls{$site}) {
+								print STDERR "Adding $site\n from message '$sub'\n from $who\n\n"
+								if ($opt_D > 1);
+								$contrib{$who}++;
+								$urls{$site} = $sub;
+								push @{$url_list{$sub}}, $site;
+							} else {
+								print STDERR "Skipping (duplicate) $site\n  from message '$sub'\n  from $who\n\n"
+								if ($opt_D > 1);
+							}
+						}
           }
         }
         print STDERR "NEW($new_lines, $lines) $_" if ($opt_D > 2);
@@ -387,30 +414,30 @@ MESSAGE: for $msg ($mbx->get_messages) {
       }
     }
     $tracker{$msgid} = $who;
-    if (@{$unordered{$msgid}}) {
+    if ($unordered{$msgid} and @{$unordered{$msgid}}) {
       my %counted = ();
-      print STDERR "Matched MSGID to Previous Reference\n" 
+      print STDERR "Matched MSGID to Previous Reference\n"
         if ( $opt_D > 1 );
       REF: for my $ordered (@{$unordered{$msgid}}) {
         if ($counted{$ordered}) {
-          print STDERR " `-Already Incremented for $who ($ordered)\n" 
+          print STDERR " `-Already Incremented for $who ($ordered)\n"
             if ( $opt_D > 1 );
           next REF;
         } else {
           $counted{$ordered}++;
           $replyto{$who}++;
-          print STDERR " `-Incrimenting $who Troll Rating ($ordered)\n" 
+          print STDERR " `-Incrimenting $who Troll Rating ($ordered)\n"
             if ( $opt_D > 1 );
         }
       }
     }
     if ($replyto and $tracker{$replyto}) {
       $replyto{$tracker{$replyto}}++;
-      print STDERR "Replying to: $tracker{$replyto} ($replyto{$tracker{$replyto}})\n" 
+      print STDERR "Replying to: $tracker{$replyto} ($replyto{$tracker{$replyto}})\n"
         if ( $opt_D > 1 );
     } elsif ($replyto) {
       push @{$unordered{$replyto}}, $msgid;
-      print STDERR "Replying to: Unknown Reference\n" 
+      print STDERR "Replying to: Unknown Reference\n"
         if ( $opt_D > 1 );
     }
     if ($references) {
@@ -421,7 +448,7 @@ MESSAGE: for $msg ($mbx->get_messages) {
           if ($opt_D > 1);
         if ($rmsgid ne $replyto and $tracker{$rmsgid}) {
           $replyto{$tracker{$rmsgid}}++;
-          print STDERR "Referencing ($rmsgidc): $tracker{$rmsgid} ($replyto{$tracker{$rmsgid}})\n" 
+          print STDERR "Referencing ($rmsgidc): $tracker{$rmsgid} ($replyto{$tracker{$rmsgid}})\n"
             if ( $opt_D > 1 );
         } elsif ($tracker{$rmsgid}) {
           print STDERR "Referenced In-Reply-To Duplicate ($rmsgidc): $tracker{$rmsgid} ($replyto{$tracker{$rmsgid}})\n"
@@ -437,14 +464,14 @@ MESSAGE: for $msg ($mbx->get_messages) {
     if ($new_lines * 10 < $lines - $new_lines and !$html) {
       $html++;
       $bad++;
-      print STDERR "$sub) New lines ($new_lines) is less that 10% of quoted lines(" 
+      print STDERR "$sub) New lines ($new_lines) is less that 10% of quoted lines("
         . ($lines - $new_lines) . ") by $who\n" if ($opt_D);
     } elsif (!$html and $toppost and $quotes) {
       $html++;
       $bad++;
       print STDERR "$sub) Top Post from $who\n" if ($opt_D);
     }
-    for my $line ($body->signature) { 
+    for my $line ($body->signature) {
       print STDERR "SIG::$who => $line\n" if ($line !~ /^\s*$/ and $opt_D > 2);
     }
     $count{$who}++;
@@ -452,12 +479,12 @@ MESSAGE: for $msg ($mbx->get_messages) {
     $new_lines{$who} += $new_lines;
     $html{$who} += $html;
     $counter++;
-    if ($html{$who} > $count{$who}) { 
+    if ($html{$who} > $count{$who}) {
       die "ERROR: Bad Mails outnumbers Total Mails
     $who: $html{$who} > $count{$who}
-    This should NEVER happen.\n" 
+    This should NEVER happen.\n"
     }
-  } 
+  }
   print STDERR '-' x 75 . "\n" if ($opt_D);
   $msgc++;
 }
@@ -465,9 +492,9 @@ print "Removing temporary mailbox\n" if ($opt_v and $tmpbox);
 unlink($mailbox) if ($tmpbox);
 
 if ($opt_M) {
-  print "Start Date: " . UnixDate($date1, "%b %e, %Y") . "\n" 
+  print "Start Date: " . UnixDate($date1, "%b %e, %Y") . "\n"
     if ($opt_f);
-  print "End Date:   " . UnixDate($date2, "%b %e, %Y") . "\n" 
+  print "End Date:   " . UnixDate($date2, "%b %e, %Y") . "\n"
     if ($opt_f or $opt_t);
   @keys = sort {
     $mailer{$b} <=> $mailer{$a}
@@ -498,7 +525,7 @@ if ( $opt_L ) {
 } elsif ( $opt_G ) {
   print "Sorting by total number of noise sent\n" if ($opt_v);
   @keys = sort {
-    ($lines{$a} / $new_lines{$a}) <=> ($lines{$b} / $new_lines{$b}) 
+    ($lines{$a} / $new_lines{$a}) <=> ($lines{$b} / $new_lines{$b})
   } keys %count;
 } else {
   print "Sorting by total number of emails sent\n" if ($opt_v);
@@ -518,9 +545,9 @@ print "count v$VERSION by MadHat(at)Unspecific.com - [[|%^)
 --\n\n"
   if ($opt_v);
 print "Total emails checked: $count2\n" if ($opt_v);
-print "Start Date: " . UnixDate($date1, "%b %e, %Y") . "\n" 
+print "Start Date: " . UnixDate($date1, "%b %e, %Y") . "\n"
   if ($opt_f);
-print "End Date:   " . UnixDate($date2, "%b %e, %Y") . "\n" 
+print "End Date:   " . UnixDate($date2, "%b %e, %Y") . "\n"
   if ($opt_f or $opt_t);
 print "Total emails matched: $counter\n"; # if ($counter != $count2);
 print "Total emails from losers: $bad\n" if ($bad and $opt_l);
@@ -528,7 +555,8 @@ $number = keys %count;
 print "Total Unique Entries: $number\n";
 $max_count = $opt_m?$opt_m:50;
 for $id (@keys) {
-  $perc = $loser = 0;  
+  $perc = 0;
+  $loser = 0;
   $replyto{$id} = $replyto{$id}?$replyto{$id}:'0';
   $current_number++;
   last if ($current_number > $max_count);
@@ -571,6 +599,7 @@ $0 <-e|-d|-s|-M> [-ENLGTlu] [-m#] [-f <from_date> -t <to_date>] <mailbox | http:
   . "\t-l Add loser rating\n"
   . "\t-T Add troll rating\n"
   . "\t-u Add list of URLs found in the date range\n"
+  . "\t\t-Ssubject ignore messages with specified subject header\n"
   . "\t-v Verbose output (DEBUG Output)\n"
   . "\t-E sort on emails (DEFAULT)\n"
   . "\t-L sort on total lines\n"
@@ -583,21 +612,21 @@ $0 <-e|-d|-s|-M> [-ENLGTlu] [-m#] [-f <from_date> -t <to_date>] <mailbox | http:
 
   if ($opt_h) {
     print "
-'count' will open the disgnated mailbox and sort through the emails counting 
-on the specified results.  
+'count' will open the disgnated mailbox and sort through the emails counting
+on the specified results.
 
 -e, -d or -s are required as well as a mailbox.  All other flags are optional.
 
  -e will count on the whole email address
  -d will count only on the domain portion of the email (everything after the \@)
  -s will count on the suffix (evertthing past the last . - .com, .org...)
- -M will count the Mailers, (PINE, mutt, OutLook), most options do not work 
+ -M will count the Mailers, (PINE, mutt, OutLook), most options do not work
     with this Counter
 
 Present reporting fields include the designated count field (see above),
 Total EMails Posted, Total Lines Posted, Total New Lines and Sig/Noise Ratio.
 
-- Total EMails Pasted is just that, the total number of emails posted by 
+- Total EMails Pasted is just that, the total number of emails posted by
   that counted field.
 
 - Total Lines Posted is the total number of messages lines, not including
@@ -617,17 +646,17 @@ Total EMails Posted, Total Lines Posted, Total New Lines and Sig/Noise Ratio.
 
 Other Options:
 
-The default sort order is by Total Number of Emails (-E), but you can also 
+The default sort order is by Total Number of Emails (-E), but you can also
 sort by other fields:
 
  -L to sort on total number of Lines posted.
  -N to sort on total number of New Lines posted.
  -G to sort on Garbage. Garbage is the number of non-new lines.
 
-By default the maximum number of counted fields shown is 50.  This can be 
-changed with the -m flag.  
+By default the maximum number of counted fields shown is 50.  This can be
+changed with the -m flag.
 
-By default the date range is from January 1, 1970 through 'today'.  You can 
+By default the date range is from January 1, 1970 through 'today'.  You can
 specify a date range using the -f and -t options
 
  -f From date.  Format is somewhat forgiving, but recomended is mm/dd/yyyy
@@ -635,9 +664,10 @@ specify a date range using the -f and -t options
 
  -u Add list of URLs found in the date range
     create a list of URLs found, with Subject of the email listed for each URL
+	-Ssubject will ignore any messages with the specified subject.
 
- -l Add loser rating.  I added this because I use this on mailing lists.  
-      Most mailing lists I am on, consider it bad to post HTML or attachments 
+ -l Add loser rating.  I added this because I use this on mailing lists.
+      Most mailing lists I am on, consider it bad to post HTML or attachments
       to the list, so this counts the number of HTML posting and attachments
       (other than things like PGP Sigs) and generates a number from 0 to 100
       which is the % of the mails that fall into this catagory.
@@ -645,8 +675,8 @@ specify a date range using the -f and -t options
  -T Add Troll rating.  I added this because some lists didn't have any
       obvious losers ;^) and didn't want to leave those lists out.
       This is simply the number of emails referencing a previous email
-      The information is gathered from the 'In-Reply-To' and 
-      'Reference' headers.  
+      The information is gathered from the 'In-Reply-To' and
+      'Reference' headers.
 
 ";
   }
@@ -675,7 +705,7 @@ sub load_formats {
     $fl1 .=  "@>>>> ";
     $fl2 .=  ", \$replyto{\$id}";
   }
-  $format = join ("\n", $flt0, $flt1, $flt2, $flt3, $flt4, $fl0, $fl1, $fl2, $fl3);
+  $format = join ("\n", $flt0, "\n", $flt2, $flt3, $flt4, $fl0, $fl1, $fl2, $fl3);
 
   eval $format;
 }
@@ -694,18 +724,18 @@ sub init {
     'Microsoft-Outlook-Express-Macintosh-Edition' => 'Outlook Express (Mac)',
     'AT\&T Message Center' => 'AT&T Message Center', 'AOL ' => 'AOL',
     'SquirrelMail' => 'SquirrelMail', 'Opera/' => 'Opera',
-    'WWW-Mail' => 'Global Message Exchange', 
+    'WWW-Mail' => 'Global Message Exchange',
     'Mutt' => 'Mutt', 'PIPEX NetMail' => 'PIPEX', 'Calypso' => 'Calypso',
     'Infinite Mobile Delivery' => 'Hydra', 'Netscape' => 'Netscape',
-    'Microsoft Outlook Express' => 'Outlook Express', 
-    'Internet Mail Service' => 'Outlook Internet Mail Service', 
-    'Microsoft Outlook \d\.' => 'Outlook', 
-    'Microsoft Outlook\, ' => 'Outlook', 
-    'Microsoft Exchange\, ' => 'Outlook', 
-    'Microsoft-Entourage\/' => 'Microsoft-Entourage', 
-    'Microsoft Outlook IMO' => 'Outlook Internet Mail Only', 
-    'Microsoft Outlook CW' => 'Outlook Corporate/Workgroup', 
-    # 'Microsoft ' => 'Microsoft (other)', 
+    'Microsoft Outlook Express' => 'Outlook Express',
+    'Internet Mail Service' => 'Outlook Internet Mail Service',
+    'Microsoft Outlook \d\.' => 'Outlook',
+    'Microsoft Outlook\, ' => 'Outlook',
+    'Microsoft Exchange\, ' => 'Outlook',
+    'Microsoft-Entourage\/' => 'Microsoft-Entourage',
+    'Microsoft Outlook IMO' => 'Outlook Internet Mail Only',
+    'Microsoft Outlook CW' => 'Outlook Corporate/Workgroup',
+    # 'Microsoft ' => 'Microsoft (other)',
     'Mozilla/\d\.\d \(Windows' => 'Mozilla (Windows)',
     'Mozilla/\d\.\d \(Macintosh' => 'Mozilla (Macintosh)',
     'Mozilla/\d\.\d \(X11; \w; Linux' => 'Mozilla (Linux)',
@@ -721,22 +751,22 @@ sub init {
     'GoldMine' => 'GoldMine', 'WebMail' => 'WebMail', '<IMail ' => 'IMail',
     'Ximian Evolution' => 'Evolution', 'Evolution' => 'Evolution',
     'Pegasus Mail' => 'Pegasus', 'Forte Agent' => 'Forte',
-    'Sylpheed ' => 'Sylpheed', 'MailCity ' => 'MailCity', 
-    'Endymion ' => 'Endymion MailMan', 'CommuniGate ' => 'CommuniGate', 
-    'VisualMail ' => 'VisualMail', 'Lotus Notes ' => 'Lotus Notes', 
-    'Gnus v\d\.\d\/Emacs ' => 'Emacs', 
-    'Gnus\/\d\.\d+ \([\w\s\.\d]+\) X?Emacs' => 'Emacs', 
-    'InterChange \(Hydra' => 'Hydra', 'Microsoft CDO ' => 'Microsoft CDO', 
-    'Foxmail ' => 'Foxmail', 'NeoMail ' => 'NeoMail', 
-    'Claris Emailer ' => 'Claris Emailer', 
-    'KNode\/' => 'KNode', 'PocoMail ' => 'PocoMail', 
-    'mPOP Web-Mail ' => 'mPOP Web-Mail', 'Balsa ' => 'Balsa', 
-    'MIME-tools ' => 'Entity', 'Opera ' => 'Opera', 
-    'NeoMail ' => 'NeoMail', 'Phoenix ' => 'Phoenix Mail', 
-    'CompuServe ' => 'CompuServe', 'MSN Explorer ' => 'MSN Explorer', 
-    'WorldClient ' => 'Alt-N WorldClient', 
-    'Atlas ' => 'Atlas Mailer', 
-    'The Bat' => 'The Bat', 'Web Mail' => 'WebMail', 
+    'Sylpheed ' => 'Sylpheed', 'MailCity ' => 'MailCity',
+    'Endymion ' => 'Endymion MailMan', 'CommuniGate ' => 'CommuniGate',
+    'VisualMail ' => 'VisualMail', 'Lotus Notes ' => 'Lotus Notes',
+    'Gnus v\d\.\d\/Emacs ' => 'Emacs',
+    'Gnus\/\d\.\d+ \([\w\s\.\d]+\) X?Emacs' => 'Emacs',
+    'InterChange \(Hydra' => 'Hydra', 'Microsoft CDO ' => 'Microsoft CDO',
+    'Foxmail ' => 'Foxmail', 'NeoMail ' => 'NeoMail',
+    'Claris Emailer ' => 'Claris Emailer',
+    'KNode\/' => 'KNode', 'PocoMail ' => 'PocoMail',
+    'mPOP Web-Mail ' => 'mPOP Web-Mail', 'Balsa ' => 'Balsa',
+    'MIME-tools ' => 'Entity', 'Opera ' => 'Opera',
+    'NeoMail ' => 'NeoMail', 'Phoenix ' => 'Phoenix Mail',
+    'CompuServe ' => 'CompuServe', 'MSN Explorer ' => 'MSN Explorer',
+    'WorldClient ' => 'Alt-N WorldClient',
+    'Atlas ' => 'Atlas Mailer',
+    'The Bat' => 'The Bat', 'Web Mail' => 'WebMail',
     'IMP\/PHP3?' => 'IMP', 'Internet Messaging Program' => 'IMP',
     # 'Mozilla' => 'Mozilla',
   );
