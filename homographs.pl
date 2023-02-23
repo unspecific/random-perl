@@ -7,17 +7,22 @@ use Data::Dump qw(dump);
 my $DEBUG = 1;
 
 
+# initial testing of comparing images
+# Will use this process to create a config that has how much alike each of the
+# letters are the most alike for testing strings
+
 binmode(STDOUT, ':utf8');
 binmode(STDOUT, ":encoding(UTF-8)");
 my $used;
 my %data;
 my $saved;
-
+my $generated;
 
 my $xsize = 70;
 my $ysize = 100;
 my $text_size = 120;
-my $font_filename = '/usr/share/fonts/truetype/ubuntu/UbuntuMono-R.ttf';
+# my $font_filename = '/usr/share/fonts/truetype/ubuntu/UbuntuMono-R.ttf';
+my $font_filename = '/usr/share/fonts/truetype/freefont/FreeMono.ttf';
 
 
 # generate list of characters to test
@@ -27,6 +32,8 @@ for my $x (0..1) {
     my $post = sprintf("%02X", $y);
     my $uni = chr($x . $y);
     next if ($uni =~ /[^\p{L}]/); # removed characters we don't need right now
+                                  # Specifically only allow "Letters" to be added
+    # next if ($uni =~ /\p{Ea=W}/); # remove wide characters
     $used++;
     print STDERR "$pre$post, $uni\n" if ($DEBUG > 5);
     $data{'chars'}{"$pre:$post"} = $uni;
@@ -59,6 +66,7 @@ sub compare {
   } else {
     $origImage = &generateImage($origTxt);
     $data{'img'}{$origTxt} = $origImage;
+    $generated++;
   }
   if ($data{'img'}{$compTxt}) {
     $compImage = $data{'img'}{$compTxt};
@@ -66,6 +74,7 @@ sub compare {
   } else {
     $compImage = &generateImage($compTxt);
     $data{'img'}{$compTxt} = $compImage;
+    $generated++;
   }
 
   my $diff = $origImage->difference(other=>$compImage);
